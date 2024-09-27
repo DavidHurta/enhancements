@@ -11,8 +11,9 @@ approvers:
 api-approvers:
   - "@deads2k"
   - "@bparees"
+  - "@JoelSpeed"
 creation-date: 2023-10-09
-last-updated: 2024-09-10
+last-updated: 2024-09-26
 tracking-link:
   - https://issues.redhat.com/browse/OTA-923
 see-also:
@@ -27,46 +28,59 @@ superseded-by:
 
 ## Summary
 
-This enhancement describes the API changes needed to provide a simple
-way of dynamically changing the verbosity level of Cluster Version Operator's logs.
+This enhancement proposes to create a new OpenShift API to provide a simple
+method of dynamically changing the verbosity level of Cluster Version Operator's
+logs. There will be four log levels available. The lowest level being the
+current default log level being used by the Cluster Version Operator.
 
 ## Motivation
 
-The [Cluster Version Operator (CVO)](https://github.com/openshift/cluster-version-operator)
-is responsible for a number of resources and thus logs a lot of information.
-However, there is currently no way to easily change the verbosity of the CVO logs.
+There is currently no way to easily change the verbosity of the [Cluster Version Operator (CVO)](https://github.com/openshift/cluster-version-operator)
+logs in a live cluster.
 
 It would be useful to provide functionality for the cluster administrators and
-OpenShift engineers to easily modify the log level to a desired level similarly
-as can be done for [`ClusterOperators`](https://github.com/openshift/api/blob/5852b58f4b1071fe85d9c49dff2667a9b2a74841/operator/v1/types.go#L58-L65).
+OpenShift engineers to easily modify the log level to a desired level using an API
+[similarly as can be done for some other operators](https://github.com/openshift/api/blob/5852b58f4b1071fe85d9c49dff2667a9b2a74841/operator/v1/types.go#L67-L74).
 
 ### User Stories
 
-* As an OpenShift administrator, I want to increase the log level of the CVO to
-  more easily troubleshoot any potential issues regarding the cluster or CVO.
-* As an OpenShift administrator, I want to decrease the log level of the CVO to
-  save up more storage space.
+* As an OpenShift administrator, I want to increase the log level of the CVO 
+  from the default level to more easily troubleshoot any potential issues regarding
+  the cluster or the CVO.
+* As an OpenShift administrator, I want to decrease the log level of the CVO
+  from a previously set higher log level to save storage space.
 * As an OpenShift engineer, I want to increase the log level of the CVO for
-  the CI runs so that I can more easily troubleshoot any potential issues that occurred.
-* As an OpenShift engineer, I want to decrease the log level of the CVO for
-  shipped releases so that customers don't receive debug logs.
+  a CI run so that I can more easily troubleshoot any potential issues.
 
 ### Goals
 
-The goal is to add a user-facing API for controlling the verbosity of the CVO logs.
+* Add a user-facing API for controlling the verbosity of the CVO logs.
 
 ### Non-Goals
 
-Change the default logging verbosity of the Cluster Version Operator in production
-OCP clusters.
+* Change the default logging verbosity of the Cluster Version Operator.
+* Allow users to set a lower than the current default logging level.
 
 ## Proposal
 
-This enhancement proposes to add a new field to the `ClusterVersion` Custom Resource Definition (CRD). The CVO
-will dynamically change the verbosity of its logs based on the value provided in the
-new field. The field is described in more detail in the **Implementation Details**
-section. A CRD modification is proposed because `ClusterOperator` CRD contains
-such a field as well. This will ensure consistency across different OpenShift operators.
+This enhancement proposes to create a new `CustomResourceDefinition` (CRD) 
+called `clusterversionoperators.operator.openshift.io`. The CRD will be part 
+of the [`github.com/openshift/api/operator/v1`][github.com/openshift/api/operator/v1]
+package. A `ClusterVersionOperator` resource will be used to configure the 
+CVO. The configuration, as of now, will only contain the knob to modify the CVO 
+log level. A `ClusterVersionOperator` resource will be added to the OCP 
+payload. The CVO will dynamically change the verbosity of its logs based on a
+value provided in the new resource. The CRD is described in more detail in the
+**Implementation Details** section. A new CRD is created to better differentiate 
+between the cluster version and the CVO configuration.
+
+Four log levels will be available. The lowest level being the
+current default log level being used by the Cluster Version Operator. The exact 
+log levels are defined as per the existing enum [`LogLevel`][LogLevelType] that 
+is used in the new `ClusterVersionOperator` CRD. See the **Implementation 
+Details** section for more details.
+
+[LogLevelType]: https://github.com/openshift/api/blob/f89ab92f1597eaed4de5b947c1781adde2bf42fb/operator/v1/types.go#L94-L110
 
 ### Workflow Description
 
@@ -81,35 +95,41 @@ Given a cluster administrator and a working cluster for which the administrator 
 3. The cluster administrator notices that the logs are not detailed enough to
    troubleshoot the issue.
 4. The cluster administrator raises the log level from the default value to a
-   more verbose level by simply modifying the ClusterVersion object via the web
-   console or by patching the resource by using the CLI.
+   more verbose level by simply modifying the new ClusterVersionOperator resource
+   via the web console or by patching the resource by using the CLI.
 5. The cluster administrator fixes the issue in the cluster.
 6. The cluster administrator notices that the CVO outputs too many logs for the
    administrator's liking.
-7. The cluster administrator lowers the log level of the CVO to the default level.
+7. The cluster administrator lowers the log level of the CVO to the lowest 
+   level, the default level.
 8. The cluster administrator is now a happy cluster administrator.
 
 ### API Extensions
 
-The enhancement proposes to modify the `ClusterVersion` CRD.
+The enhancement proposes to create a new `ClusterVersionOperator` CRD. A new
+`ClusterVersionOperator` resource will only impact the CVO logging level.
 
 ### Topology Considerations
 
 #### Hypershift / Hosted Control Planes
 
-The implementation of HyperShift needs to account for this change because updating
-the `github.com/openshift/api` module in HyperShit would provide a way for the
-administrator of a hosted cluster to set the log level of a CVO in a
-hosted control plane. The hosted cluster administrator could set an undesirable level.
+A hosted CVO is located in the management cluster and accesses the hosted API
+server. As the new CR will be part of the OCP payload, it will be applied to the
+hosted cluster.
 
-However, this design proposes a desired feature that HyperShift can potentially
-utilize, and thus HyperShift implementation should address the above-mentioned issue
-for the overall benefit.
+It is needed to address the fact that the hosted cluster API server will now 
+provide access to the new CR that represents the CVO configuration. A 
+hosted cluster administrator could set the log level of the hosted CVO in the
+management cluster, thus affecting the storage space of the management cluster.
 
-In HyperShift, this enhancement proposes to reconcile a fixed value of the new property
-as [HyperShift currently does for some other properties of the ClusterVersion object](https://github.com/openshift/hypershift/blob/90aa44d064f6fe476ba4a3f25973768cbdf05eb5/control-plane-operator/hostedclusterconfigoperator/controllers/resources/resources.go#L973-L979)
-of a hosted cluster. And potentially, in the future, the HyperShift may even
-dynamically utilize this property.
+In HyperShift, this enhancement proposes the management cluster to reconcile 
+the new resource. The HyperShift will maintain a fixed value, the default 
+value, of the hosted CVO log level and thus will overwrite any user changes.
+Similarly, as the HyperShift does for [log levels of other operators that 
+are located in the management cluster](https://github.com/openshift/hypershift/blob/main/control-plane-operator/hostedclusterconfigoperator/controllers/resources/storage/reconcile.go#L7-L23). 
+
+In the future, if there is a desire and a need for this feature to function in 
+the HyperShift as well, additional implementation may be done. 
 
 #### Standalone Clusters
 
@@ -118,83 +138,118 @@ CVO log level. No additional changes are needed.
 
 #### Single-node Deployments or MicroShift
 
-SNO and MicroShift Cluster administrators will now have the choice to modify the
-CVO logs. Same as standalone clusters. The choice to reduce the CVO logs may be
-even more desirable for such cluster administrators to reduce the storage
-consumed by the CVO if needed. No additional changes are needed.
+Same as standalone clusters.
 
 ### Implementation Details/Notes/Constraints
 
-This enhancement proposes to add a new field to configure the log level of the CVO
-by modifying the `ClusterVersion` resource.
-Because more additional CVO specific options may be exposed by the
-`ClusterVersion` in the future, this enhancement proposes to add a new
-`OperatorOptions` field to the existing [`ClusterVersionSpec`](https://github.com/openshift/api/blob/3e5de946111c67cb1f2b09ff7da569012d15931d/config/v1/types_cluster_version.go#L50) struct:
+This enhancement proposes to create a new `operator/v1/types_clusterversion.go` 
+file in the [OpenShift API repository](https://github.com/openshift/api). 
+Meaning the new data types will be part of the [`github.com/openshift/api/operator/v1`][github.com/openshift/api/operator/v1]
+package. A new feature-gated cluster scoped configuration API resource will be 
+defined to configure the CVO.
+
+The types are inspired by the existing [`OperatorSpec`][OperatorSpec]
+and [`OperatorStatus`][OperatorStatus]
+structures and copy over some of the fields. Only the  
+`OperatorLogLevel` field is introduced to the `spec` field as there is currently
+no need to support the rest of the [`OperatorSpec`][OperatorSpec]
+fields or any new fields. A similar case applies to the 
+[`OperatorStatus`][OperatorStatus] fields. The `ObservedGeneration` field is 
+used to give feedback regarding the last generation change the CVO has dealt
+with. There is currently no need to support additional fields.
+
+The `ClusterVersionOperator` CRD will be behind a new 
+`ClusterVersionOperatorConfiguration` FeatureGate that will be used to 
+control the development of the CVO configuration.
+
+[github.com/openshift/api/operator/v1]: https://github.com/openshift/api/tree/master/operator/v1
+[OperatorSpec]: https://github.com/openshift/api/blob/f89ab92f1597eaed4de5b947c1781adde2bf42fb/operator/v1/types.go#L54
+[OperatorStatus]: https://github.com/openshift/api/blob/f89ab92f1597eaed4de5b947c1781adde2bf42fb/operator/v1/types.go#L112
+
+The proposed contents of the new `operator/v1/types_clusterversion.go` file:
 
 ```go
-type ClusterVersionSpec struct {
-...
-	// operatorOptions contains options to configure the CVO.
-	//
-	// +optional 
-	OperatorOptions *ClusterVersionOperatorOptions `json:"operatorOptions,omitempty"`
-}
-```
+package v1
 
-The new `OperatorOptions` field will group all the CVO specific fields
-to make the `ClusterVersionSpec` more organized, future-proof, and clear.
-The `ClusterVersionOperatorOptions` type is defined as:
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
 
-```go
-// ClusterVersionOperatorOptions contains options to configure the CVO.
+// +genclient
+// +genclient:nonNamespaced
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// ClusterVersionOperator holds cluster-wide information about the Cluster Version Operator.
 //
-// +k8s:deepcopy-gen=true
-type ClusterVersionOperatorOptions struct {
-	// operatorLogLevel controls the verbosity level of logs produced by the CVO.
+// Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
+// +openshift:compatibility-gen:level=1
+// +openshift:file-pattern=cvoRunLevel=0000_00,operatorName=cluster-version-operator,operatorOrdering=01
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:path=clusterversionoperators,scope=Cluster
+// +openshift:api-approved.openshift.io=https://github.com/openshift/api/pull/2044
+// +openshift:enable:FeatureGate=ClusterVersionOperatorConfiguration
+type ClusterVersionOperator struct {
+	metav1.TypeMeta `json:",inline"`
+
+	// metadata is the standard object's metadata.
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	metav1.ObjectMeta `json:"metadata"`
+
+	// spec is the specification of the desired behavior of the Cluster Version Operator.
+	// +kubebuilder:validation:Required
+	// +required
+	Spec ClusterVersionOperatorSpec `json:"spec"`
+
+	// status is the most recently observed status of the Cluster Version Operator.
+	// +kubebuilder:validation:Optional
+	// +optional
+	Status ClusterVersionOperatorStatus `json:"status"`
+}
+
+// ClusterVersionOperatorSpec is the specification of the desired behavior of the Cluster Version Operator.
+type ClusterVersionOperatorSpec struct {
+	// operatorLogLevel is an intent based logging for the operator itself.  It does not give fine grained control, but it is a
+	// simple way to manage coarse grained logging choices that operators have to interpret for themselves.
 	//
 	// Valid values are: "Normal", "Debug", "Trace", "TraceAll".
 	// Defaults to "Normal".
 	// +optional
 	// +kubebuilder:default=Normal
-	LogLevel CVOLogLevel `json:"logLevel,omitempty"`
+	OperatorLogLevel LogLevel `json:"operatorLogLevel,omitempty"`
+}
+
+// ClusterVersionOperatorStatus defines the observed status of the Cluster Version Operator.
+type ClusterVersionOperatorStatus struct {
+	// observedGeneration is the last generation change you've dealt with
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// ClusterVersionOperatorList is a collection of ClusterVersionOperators.
+//
+// Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
+// +openshift:compatibility-gen:level=1
+type ClusterVersionOperatorList struct {
+	metav1.TypeMeta `json:",inline"`
+
+	// metadata is the standard list's metadata.
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	metav1.ListMeta `json:"metadata"`
+
+	// Items is a list of ClusterVersionOperators.
+	Items []ClusterVersionOperator `json:"items"`
 }
 ```
-
-The `CVOLogLevel` type is defined as:
-
-```go
-// CVOLogLevel represents the verbosity level of logs produced by the CVO.
-//
-// +kubebuilder:validation:Enum="";Normal;Debug;Trace;TraceAll
-type CVOLogLevel string
-
-var (
-	// CVOLogLevelNormal is the default.  Normal, working log information, everything is fine, but helpful notices for auditing or common operations.  In kube, this is probably glog=2.
-	CVOLogLevelNormal CVOLogLevel = "Normal"
-
-	// CVOLogLevelDebug is used when something went wrong.  Even common operations may be logged, and less helpful but more quantity of notices.  In kube, this is probably glog=4.
-	CVOLogLevelDebug CVOLogLevel = "Debug"
-
-	// CVOLogLevelTrace is used when something went really badly and even more verbose logs are needed.  Logging every function call as part of a common operation, to tracing execution of a query.  In kube, this is probably glog=6.
-	CVOLogLevelTrace CVOLogLevel = "Trace"
-
-	// CVOLogLevelTraceAll is used when something is broken at the level of API content/decoding.  It will dump complete body content.  If you turn this on in a production cluster
-	// prepare from serious performance issues and massive amounts of logs.  In kube, this is probably glog=8.
-	CVOLogLevelTraceAll CVOLogLevel = "TraceAll"
-)
-```
-
-Ideally, this enhancement would propose to use the existing [`LogLevel`](https://github.com/openshift/api/blob/36ce464529eb357673342c06be5886c5463cfc50/operator/v1/types.go#L91-L107)
-type that is used by `ClusterOperators` defined in the [`github.com/openshift/api/operator/v1`](https://github.com/openshift/api/tree/master/operator/v1) package.
-
-However, importing the [`github.com/openshift/api/operator/v1`](https://github.com/openshift/api/tree/master/operator/v1) package from inside
-the [`github.com/openshift/api/config/v1`](https://github.com/openshift/api/tree/master/config/v1) package where the `ClusterVersionSpec`
-struct resides causes **import cycles**. To ensure consistency across the operators
-and to not cause import cycles, this type will be redefined in the [api/config/v1/types_cluster_version.go](https://github.com/openshift/api/blob/master/config/v1/types_cluster_version.go) file.
 
 ### Risks and Mitigations
 
 No risks are known.
+
+No important logs will be lost due to this enhancement. The lowest settable 
+log level, the `Normal` level, will represent the current default CVO log level.
 
 ### Drawbacks
 
@@ -202,50 +257,28 @@ No drawbacks are known.
 
 ## Open Questions [optional]
 
-The `ClusterVersion` type is currently defined as a configuration for the CVO.
-
-```go
-// ClusterVersion is the configuration for the ClusterVersionOperator. This is where
-// parameters related to automatic updates can be set.
-...
-type ClusterVersion struct {
-```
-
-However, `ClusterVersionSpec` is defined as a desired version state of a cluster.
-
-```go
-// ClusterVersionSpec is the desired version state of the cluster. It includes
-// the version the cluster should be at, how the cluster is identified, and
-// where the cluster should look for version updates.
-...
-type ClusterVersionSpec struct 
-```
-
-Thus, including CVO specific options may not be potentially desired. We could
-update the `ClusterVersionSpec` definition.
+No open questions.
 
 ## Test Plan
 
-Unit tests will be written to test if setting the new field sets the respective logging in the CVO.
+* Unit tests
+* E2E test(s) to ensure that the CVO correctly reconciles the new resource
 
 ## Graduation Criteria
 
 ### Dev Preview -> Tech Preview
 
-The enhancement will be released directly to GA.
+- Ability to utilize the enhancement end to end
+- Relative API stability
+- Sufficient test coverage
+- Gather feedback
 
 ### Tech Preview -> GA
 
-The enhancement will be released directly to GA. The new `LogLevel` field and its data type are equal
-to that of the [`OperatorLogLevel`](https://github.com/openshift/api/blob/1f9525271dda5b7a3db735ca1713ad7dc1a4a0ac/operator/v1/types.go#L74)
-field in the [`OperatorSpec`](https://github.com/openshift/api/blob/1f9525271dda5b7a3db735ca1713ad7dc1a4a0ac/operator/v1/types.go#L54)
-structure in the [`github.com/openshift/api/operator/v1`](https://github.com/openshift/api/tree/1f9525271dda5b7a3db735ca1713ad7dc1a4a0ac/operator/v1)
-package. The field in the [`github.com/openshift/api/operator/v1`](https://github.com/openshift/api/tree/1f9525271dda5b7a3db735ca1713ad7dc1a4a0ac/operator/v1)
-package has been stable for several years. Thus, the addition may be directly
-released to GA. The implementation of the CVO to dynamically change its verbosity
-level is considered to be less complex.
-
-User facing documentation will be created in [openshift-docs](https://github.com/openshift/openshift-docs/).
+- Sufficient time for feedback
+- All tests are implemented
+- Available by default
+- User-facing documentation created in [openshift-docs](https://github.com/openshift/openshift-docs/)
 
 ### Removing a deprecated feature
 
@@ -257,20 +290,13 @@ Not applicable.
 
 ## Version Skew Strategy
 
-The relevant components for this enhancement are the CVO and the ClusterVersion
-CR. These components move closely together on updates and downgrades. During a
-version skew, the default log level will be used.
-
-A newer CVO that consumes an older ClusterVersion will receive an empty
-`OperatorLogLevel` field, and the CVO will continue using the default log level.
-
-An older CVO that consumes newer ClusterVersion will not notice the
-`OperatorLogLevel` field, and the CVO will continue using the default log level.
+The relevant component for this enhancement is the CVO. During a version skew, 
+the default log level will be used.
 
 ## Operational Aspects of API Extensions
 
-This enhancement proposes a minor addition to the existing `ClusterVersion` CRD.
-This new addition will operationally impact only the CVO. It may increase or
+This enhancement proposes to create a new `ClusterVersionOperator` CRD.
+A new CR will operationally impact only the CVO. It may increase or
 decrease its logs. Impacting the storage.
 
 ## Support Procedures
@@ -279,40 +305,14 @@ Not applicable.
 
 ## Alternatives
 
-### Move the existing `LogLevel` type to a different package
+### The CVO state will be represented by the ClusterVersion resource
 
-The proposed implementation does not follow the DRY (Don't repeat yourself) 
-principle, as it copies over the existing `LogLevel` data type from the
-[`github.com/openshift/api/operator/v1`](https://github.com/openshift/api/tree/master/operator/v1) package. This was proposed as the
-`ClusterVersionSpec` struct may not import the existing type, as this causes 
-import cycles.
+The CVO will be configurable by the existing `ClusterVersion` resource. The 
+`spec` field of the `ClusterVersion` resource will grow CVO configuration.   
 
-An alternative solution is to move the existing `LogLevel` type definition to a
-package that will not cause import cycles. It may be the
-[`github.com/openshift/api/config/v1`](https://github.com/openshift/api/tree/master/config/v1)
-package, different package, or a new package.
-This will not duplicate the code and may be a desired alternative. However, this
-would move a stable definition of a type corresponding to its package where it's
-heavily being used to another less logically corresponding package only due to
-an importing issue. Due to this issue, this alternative was not chosen.
-
-### The CVO state will be represented by a new Custom Resource
-
-The CVO will use a new Custom Resource (CR) for its state. Cluster operators 
-tend to have two associated CRs. `ClusterOperator` CR to configure a respective
-cluster operator state, and a CR that represents the operator's operand.
-
-The CVO is not a `ClusterOperator`; however, the CVO will try to adopt
-conceptually the structure of CRs used by `ClusterOperators`.
-
-However, right now there is no need to provide CVO specific conditions, status,
-or plethora of options. The health of the CVO affects the health of the cluster. All
-this information is propagated to the `ClusterVersion` CR. Using a new CR could
-result in a duplication of status information. A new CR would only contain the new
-log level specification as of the moment, and using a new CR only due to this 
-reason may not be desired.
-
-This alternative was not chosen due to its increased complexity.
+This alternative was not chosen due to it breaking the existing API consistency
+to an extent. `ClusterVersion` will continue to configure the cluster 
+version, and the new `ClusterVersionOperator` resource will configure the CVO.
 
 ### Do not introduce an option to dynamically modify the verbosity level of logs
 
