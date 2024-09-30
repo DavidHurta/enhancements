@@ -1,7 +1,7 @@
 ---
 title: cvo-log-level-api
 authors:
-  - "@Davoska"
+  - "@DavidHurta"
 reviewers:
   - "@wking"
   - "@LalatenduMohanty"
@@ -13,7 +13,7 @@ api-approvers:
   - "@bparees"
   - "@JoelSpeed"
 creation-date: 2023-10-09
-last-updated: 2024-09-26
+last-updated: 2024-10-01
 tracking-link:
   - https://issues.redhat.com/browse/OTA-923
 see-also:
@@ -68,8 +68,9 @@ called `clusterversionoperators.operator.openshift.io`. The CRD will be part
 of the [`github.com/openshift/api/operator/v1`][github.com/openshift/api/operator/v1]
 package. A `ClusterVersionOperator` resource will be used to configure the 
 CVO. The configuration, as of now, will only contain the knob to modify the CVO 
-log level. A `ClusterVersionOperator` resource will be added to the OCP 
-payload. The CVO will dynamically change the verbosity of its logs based on a
+log level. A `ClusterVersionOperator` resource named `cluster` will be added to
+the OCP payload. This resource will act as a singleton configuration resource
+for the CVO. The CVO will dynamically change the verbosity of its logs based on a
 value provided in the new resource. The CRD is described in more detail in the
 **Implementation Details** section. A new CRD is created to better differentiate 
 between the cluster version and the CVO configuration.
@@ -95,8 +96,9 @@ Given a cluster administrator and a working cluster for which the administrator 
 3. The cluster administrator notices that the logs are not detailed enough to
    troubleshoot the issue.
 4. The cluster administrator raises the log level from the default value to a
-   more verbose level by simply modifying the new ClusterVersionOperator resource
-   via the web console or by patching the resource by using the CLI.
+   more verbose level by simply modifying the new `ClusterVersionOperator`
+   resource named `cluster` via the web console or by patching the resource by
+   using the CLI.
 5. The cluster administrator fixes the issue in the cluster.
 6. The cluster administrator notices that the CVO outputs too many logs for the
    administrator's liking.
