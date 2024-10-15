@@ -3,14 +3,15 @@ title: cvo-log-level-api
 authors:
   - "@DavidHurta"
 reviewers:
-  - "@wking"
-  - "@LalatenduMohanty"
-  - "@petr-muller"
+  - "@wking, for CVO aspects, ideally please look at the whole document"
+  - "@LalatenduMohanty, for CVO aspects, ideally please look at the whole document"
+  - "@petr-muller, for CVO aspects, ideally please look at the whole document"
+  - "@csrwng, for HyperShift aspects, please look at the HyperShift section"
+  - "@enxebre, for HyperShift aspects, please look at the HyperShift section"  
 approvers:
   - "@wking"
 api-approvers:
   - "@deads2k"
-  - "@bparees"
   - "@JoelSpeed"
 creation-date: 2023-10-09
 last-updated: 2024-10-01
@@ -64,8 +65,8 @@ OpenShift engineers to easily modify the log level to a desired level using an A
 ## Proposal
 
 This enhancement proposes to create a new `CustomResourceDefinition` (CRD) 
-called `clusterversionoperators.operator.openshift.io`. The CRD will be part 
-of the [`github.com/openshift/api/operator/v1`][github.com/openshift/api/operator/v1]
+called `clusterversionoperators.operator.openshift.io`. The new type will be part 
+of the [`github.com/openshift/api/operator/v1alpha1`][github.com/openshift/api/operator/v1alpha1]
 package. A `ClusterVersionOperator` resource will be used to configure the 
 CVO. The configuration, as of now, will only contain the knob to modify the CVO 
 log level. A `ClusterVersionOperator` resource named `cluster` will be added to
@@ -127,7 +128,7 @@ management cluster, thus affecting the storage space of the management cluster.
 In HyperShift, this enhancement proposes the management cluster to reconcile 
 the new resource. The HyperShift will maintain a fixed value, the default 
 value, of the hosted CVO log level and thus will overwrite any user changes.
-Similarly, as the HyperShift does for [log levels of other operators that 
+Similarly, as the HyperShift does for [log levels of some other operators that 
 are located in the management cluster](https://github.com/openshift/hypershift/blob/main/control-plane-operator/hostedclusterconfigoperator/controllers/resources/storage/reconcile.go#L7-L23). 
 
 In the future, if there is a desire and a need for this feature to function in 
@@ -144,11 +145,11 @@ Same as standalone clusters.
 
 ### Implementation Details/Notes/Constraints
 
-This enhancement proposes to create a new `operator/v1/types_clusterversion.go` 
+This enhancement proposes to create a new `operator/v1alpha1/types_clusterversion.go` 
 file in the [OpenShift API repository](https://github.com/openshift/api). 
-Meaning the new data types will be part of the [`github.com/openshift/api/operator/v1`][github.com/openshift/api/operator/v1]
-package. A new feature-gated cluster scoped configuration API resource will be 
-defined to configure the CVO.
+Meaning the new data types will be part of the [`github.com/openshift/api/operator/v1alpha1`][github.com/openshift/api/operator/v1alpha1]
+package. A new feature-gated cluster scoped alpha configuration API resource 
+will be defined to configure the CVO.
 
 The types are inspired by the existing [`OperatorSpec`][OperatorSpec]
 and [`OperatorStatus`][OperatorStatus]
@@ -164,16 +165,26 @@ The `ClusterVersionOperator` CRD will be behind a new
 `ClusterVersionOperatorConfiguration` FeatureGate that will be used to 
 control the development of the CVO configuration.
 
-[github.com/openshift/api/operator/v1]: https://github.com/openshift/api/tree/master/operator/v1
+A `ClusterVersionOperator` resource named `cluster` will be added to
+the OCP payload. This resource will act as a singleton configuration resource
+for the CVO. Thus, validation using the CEL will be introduced to ensure only 
+the `ClusterVersionOperator` resource named `cluster` exists. The 
+[`release.openshift.io/create-only`][create-only] annotation will be used to 
+ensure that the CVO will only create the resource as part of reconciling the 
+payload and will not overwrite any user changes.
+
+[github.com/openshift/api/operator/v1alpha1]: https://github.com/openshift/api/tree/master/operator/v1alpha1
 [OperatorSpec]: https://github.com/openshift/api/blob/f89ab92f1597eaed4de5b947c1781adde2bf42fb/operator/v1/types.go#L54
 [OperatorStatus]: https://github.com/openshift/api/blob/f89ab92f1597eaed4de5b947c1781adde2bf42fb/operator/v1/types.go#L112
+[create-only]: https://github.com/openshift/cluster-version-operator/blob/e546515213c8681ca44c52f178401cd47ad07d11/lib/resourceapply/interface.go#L9-L13
 
-The proposed contents of the new `operator/v1/types_clusterversion.go` file:
+The proposed contents of the new `operator/v1alpha1/types_clusterversion.go` file:
 
 ```go
-package v1
+package v1alpha1
 
 import (
+	operatorv1 "github.com/openshift/api/operator/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -183,14 +194,15 @@ import (
 
 // ClusterVersionOperator holds cluster-wide information about the Cluster Version Operator.
 //
-// Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
-// +openshift:compatibility-gen:level=1
+// Compatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support.
+// +openshift:compatibility-gen:level=4
 // +openshift:file-pattern=cvoRunLevel=0000_00,operatorName=cluster-version-operator,operatorOrdering=01
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:path=clusterversionoperators,scope=Cluster
 // +openshift:api-approved.openshift.io=https://github.com/openshift/api/pull/2044
 // +openshift:enable:FeatureGate=ClusterVersionOperatorConfiguration
+// +kubebuilder:validation:XValidation:rule="self.metadata.name == 'cluster'",message="ClusterVersionOperator is a singleton; the .metadata.name field must be 'cluster'"
 type ClusterVersionOperator struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -200,11 +212,9 @@ type ClusterVersionOperator struct {
 
 	// spec is the specification of the desired behavior of the Cluster Version Operator.
 	// +kubebuilder:validation:Required
-	// +required
 	Spec ClusterVersionOperatorSpec `json:"spec"`
 
 	// status is the most recently observed status of the Cluster Version Operator.
-	// +kubebuilder:validation:Optional
 	// +optional
 	Status ClusterVersionOperatorStatus `json:"status"`
 }
@@ -218,7 +228,7 @@ type ClusterVersionOperatorSpec struct {
 	// Defaults to "Normal".
 	// +optional
 	// +kubebuilder:default=Normal
-	OperatorLogLevel LogLevel `json:"operatorLogLevel,omitempty"`
+	OperatorLogLevel operatorv1.LogLevel `json:"operatorLogLevel,omitempty"`
 }
 
 // ClusterVersionOperatorStatus defines the observed status of the Cluster Version Operator.
@@ -232,8 +242,8 @@ type ClusterVersionOperatorStatus struct {
 
 // ClusterVersionOperatorList is a collection of ClusterVersionOperators.
 //
-// Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
-// +openshift:compatibility-gen:level=1
+// Compatibility level 4: No compatibility is provided, the API can change at any point for any reason. These capabilities should not be used by applications needing long term support.
+// +openshift:compatibility-gen:level=4
 type ClusterVersionOperatorList struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -280,6 +290,7 @@ No open questions.
 - Sufficient time for feedback
 - All tests are implemented
 - Available by default
+- API is stable
 - User-facing documentation created in [openshift-docs](https://github.com/openshift/openshift-docs/)
 
 ### Removing a deprecated feature
@@ -315,6 +326,29 @@ The CVO will be configurable by the existing `ClusterVersion` resource. The
 This alternative was not chosen due to it breaking the existing API consistency
 to an extent. `ClusterVersion` will continue to configure the cluster 
 version, and the new `ClusterVersionOperator` resource will configure the CVO.
+
+### The ClusterVersionOperator CRD will be applied to the management cluster
+
+As the hosted CVO is running in the management cluster, its configuration 
+resource will also be applied to the management cluster. The CRD will be 
+namespace scoped; one `ClusterVersionOperator` resource per one hosted 
+control plane namespace. The HyperShift will not have to process the 
+`ClusterVersionOperator` resource in the hosted cluster as there will be none. 
+This will result in less logic for the HyperShift to overwrite any user 
+changes, and the hosted CVO configuration will be maintained by the same API 
+server that maintains the hosted CVO.
+
+This alternative was not chosen, as it increases the overall complexity of the 
+solution. The HyperShift would have to support multiple potentially
+different versions of the CRD, as the HyperShift is able to handle multiple
+versions of OCP clusters on the same management cluster. The hosted CVO would 
+have to learn to process multiple API servers simultaneously and would be given 
+additional network and API server access in the management cluster.
+
+An alternative is to simply propagate the desired CVO configuration from 
+the `HostedCluster` API to the hosted `ClusterVersionOperator` resource. 
+This utilizes an existing pattern and makes the whole solution simpler and 
+thus less prone to errors and easier to maintain.
 
 ### Do not introduce an option to dynamically modify the verbosity level of logs
 
