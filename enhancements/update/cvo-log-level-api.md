@@ -124,15 +124,56 @@ It is needed to address the fact that the hosted cluster API server will now
 provide access to the new CR that represents the CVO configuration. A 
 hosted cluster administrator could set the log level of the hosted CVO in the
 management cluster, thus affecting the storage space of the management cluster.
+The `ClusterVersionOperator` `cluster` resource in the hosted cluster will be 
+protected by a validating admission policy to ensure a hosted cluster
+administrator cannot modify it and thus affect the management cluster ([as is 
+currently being done for certain resources in HyperShift][kas/admissionpolicies]).
 
-In HyperShift, this enhancement proposes the management cluster to reconcile 
-the new resource. The HyperShift will maintain a fixed value, the default 
-value, of the hosted CVO log level and thus will overwrite any user changes.
-Similarly, as the HyperShift does for [log levels of some other operators that 
-are located in the management cluster](https://github.com/openshift/hypershift/blob/main/control-plane-operator/hostedclusterconfigoperator/controllers/resources/storage/reconcile.go#L7-L23). 
+The `ClusterVersionOperator` `cluster` resource will be modifiable from the 
+management cluster. To achieve that, the [`HostedCluster`][HostedClusterAPI] 
+API will be extended, and its values for the `ClusterVersionOperator` 
+configuration will be propagated to the hosted cluster.
 
-In the future, if there is a desire and a need for this feature to function in 
-the HyperShift as well, additional implementation may be done. 
+The existing [`ClusterConfiguration`][ClusterConfigurationAPI] API could be 
+considered to reference the `ClusterVersionOperator` API; however, its 
+purpose is oriented around the configuration API (`github.com/openshift/api/config/v1`), 
+meaning configuration for OCP components rather than just operators.
+As such, a new API is proposed to extend the [`HostedCluster`][HostedClusterAPI]
+API. A new `OperatorConfiguration` API where various APIs from the 
+`github.com/openshift/api/operator/v1` package can be referenced, including 
+the newly proposed `ClusterVersionOperator` API.
+
+Starting in the alpha group, the following changes are proposed for the
+[`api/hypershift/v1alpha1/hostedcluster_types.go`][api/hypershift/v1alpha1/hostedcluster_types.go] 
+file.
+
+[HostedClusterAPI]: https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1beta1.HostedCluster
+[ClusterConfigurationAPI]: https://github.com/openshift/hypershift/blob/a0191dbda4ac75bd8ee19869d9a952aa508b3f2b/api/hypershift/v1beta1/hostedcluster_types.go#L2868
+[api/hypershift/v1alpha1/hostedcluster_types.go]: https://github.com/openshift/hypershift/blob/main/api/hypershift/v1alpha1/hostedcluster_types.go
+[kas/admissionpolicies]: https://github.com/OpenShift/hypershift/blob/36f2c22c033ecf80eb051aeace50e5bc3baa8001/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas/admissionpolicies.go#L55
+
+```go
+// OperatorConfiguration specifies configuration for individual OCP operators in the
+// cluster, represented as embedded resources that correspond to the openshift
+// operator API.
+type OperatorConfiguration struct {
+	// ClusterVersionOperator specifies the configuration for the Cluster Version Operator in the hosted cluster.
+	//
+	// +optional
+	ClusterVersionOperator *v1alpha1.ClusterVersionOperatorSpec `json:"clusterVersionOperator,omitempty"`
+}
+```
+
+```go
+type HostedClusterSpec struct {
+        ...
+	// OperatorConfiguration specifies configuration for individual OCP operators in the
+	// cluster, represented as embedded resources that correspond to the openshift
+	// operator API.
+	//
+	// +optional
+	OperatorConfiguration *OperatorConfiguration `json:"operatorConfiguration,omitempty"`
+```
 
 #### Standalone Clusters
 
@@ -311,6 +352,14 @@ the default log level will be used.
 This enhancement proposes to create a new `ClusterVersionOperator` CRD.
 A new CR will operationally impact only the CVO. It may increase or
 decrease its logs. Impacting the storage.
+
+The enhancement also proposes to extend the `HostedCluster` API and 
+introduce a new admission policy in a hosted cluster. The HyperShift will 
+simply propagate the values to the hosted cluster; operational aspects seem 
+to be minimal. The new validating admission policy will enforce who can 
+modify the hosted `ClusterVersionOperator`. Such a configuration is not 
+expected to be modified often, and the admission itself will not be extremely 
+complex; thus, the operational aspects seem to be minimal as well.
 
 ## Support Procedures
 
