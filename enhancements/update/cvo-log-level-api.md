@@ -284,8 +284,9 @@ meaning configuration for OCP components rather than just operators. As such,
 a new API is proposed to extend the [`HostedCluster`][HostedClusterAPI] API. A new
 `OperatorConfiguration` API where various APIs similar to ones from the
 `github.com/openshift/api/operator/v1` package can be referenced, including a 
-hosted CVO configuration API. The following changes are proposed for the 
-[HyperShift API][api/hypershift].
+hosted CVO configuration API. The new changes will be behind the
+`ClusterVersionOperatorConfiguration` feature gate as well.
+The following changes are proposed for the [HyperShift API][api/hypershift].
 
 [HostedClusterAPI]: https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1beta1.HostedCluster
 [ClusterConfigurationAPI]: https://github.com/openshift/hypershift/blob/a0191dbda4ac75bd8ee19869d9a952aa508b3f2b/api/hypershift/v1beta1/hostedcluster_types.go#L2868
@@ -339,6 +340,7 @@ type HostedClusterSpec struct {
 	// operator API.
 	//
 	// +optional
+	// +openshift:enable:FeatureGate=ClusterVersionOperatorConfiguration
 	OperatorConfiguration *OperatorConfiguration `json:"operatorConfiguration,omitempty"`
 ```
 
