@@ -141,11 +141,11 @@ a management cluster may host multiple OCP clusters of different versions. No
 configuration API will be introduced in the hosted cluster that would have to be
 otherwise protected by a validating admission policy.
 
-The configuration file may be a manifest file of a `ClusterVersionOperator` 
-object. The CVO may simply load the file and inspect its fields. Simplifying 
+The configuration file will be a manifest file of a `ClusterVersionOperator` 
+object. The CVO will simply load the file and inspect its fields. Simplifying 
 the structure of the configuration file. In a potential case that the 
-configuration for a hosted CVO will become vastly different from a 
-configuration to a standalone CVO, the hosted CVO may simply be taught to 
+configuration for a hosted CVO will become different from a 
+configuration to a standalone CVO, the hosted CVO will be taught to 
 differentiate between different versions of configuration files. 
 
 The API changes are described in more detail in the **Implementation
